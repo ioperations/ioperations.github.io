@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  
+  
+  <title>clang parser | Hexo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <meta name="description" content=".column {   float: left;   width: 49%;   height: 380px;   padding: 2px; }  &#x2F;* Clear floats after image containers *&#x2F;.row::after {  content: “”;  clear: both;  display: table;}   clang 是一个非">
+<meta property="og:type" content="article">
+<meta property="og:title" content="clang parser">
+<meta property="og:url" content="http://example.com/2022/07/31/parser/index.html">
+<meta property="og:site_name" content="Hexo">
+<meta property="og:description" content=".column {   float: left;   width: 49%;   height: 380px;   padding: 2px; }  &#x2F;* Clear floats after image containers *&#x2F;.row::after {  content: “”;  clear: both;  display: table;}   clang 是一个非">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="http://example.com/2022/07/31/parser/expr_with_precedence.png">
+<meta property="og:image" content="http://example.com/2022/07/31/parser/expr_without_precedence.png">
+<meta property="article:published_time" content="2022-07-31T06:19:58.000Z">
+<meta property="article:modified_time" content="2023-04-08T14:42:39.240Z">
+<meta property="article:author" content="aodong.qin">
+<meta property="article:tag" content="clang llvm">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://example.com/2022/07/31/parser/expr_with_precedence.png">
+  
+    <link rel="alternate" href="/atom.xml" title="Hexo" type="application/atom+xml">
+  
+  
+    <link rel="shortcut icon" href="/favicon.png">
+  
+  
+    
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/typeface-source-code-pro@0.0.71/index.min.css">
+
+  
+  
+<link rel="stylesheet" href="/css/style.css">
+
+  
+    
+<link rel="stylesheet" href="/fancybox/jquery.fancybox.min.css">
+
+  
+<meta name="generator" content="Hexo 6.3.0"></head>
+
+<body>
+  <div id="container">
+    <div id="wrap">
+      <header id="header">
+  <div id="banner"></div>
+  <div id="header-outer" class="outer">
+    <div id="header-title" class="inner">
+      <h1 id="logo-wrap">
+        <a href="/" id="logo">Hexo</a>
+      </h1>
+      
+    </div>
+    <div id="header-inner" class="inner">
+      <nav id="main-nav">
+        <a id="main-nav-toggle" class="nav-icon"></a>
+        
+          <a class="main-nav-link" href="/">Home</a>
+        
+          <a class="main-nav-link" href="/archives">Archives</a>
+        
+      </nav>
+      <nav id="sub-nav">
+        
+          <a id="nav-rss-link" class="nav-icon" href="/atom.xml" title="RSS Feed"></a>
+        
+        <a id="nav-search-btn" class="nav-icon" title="Search"></a>
+      </nav>
+      <div id="search-form-wrap">
+        <form action="//google.com/search" method="get" accept-charset="UTF-8" class="search-form"><input type="search" name="q" class="search-form-input" placeholder="Search"><button type="submit" class="search-form-submit">&#xF002;</button><input type="hidden" name="sitesearch" value="http://example.com"></form>
+      </div>
+    </div>
+  </div>
+</header>
+
+      <div class="outer">
+        <section id="main"><article id="post-parser" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
+  <div class="article-meta">
+    <a href="/2022/07/31/parser/" class="article-date">
+  <time class="dt-published" datetime="2022-07-31T06:19:58.000Z" itemprop="datePublished">2022-07-31</time>
+</a>
+    
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 class="p-name article-title" itemprop="headline name">
+      clang parser
+    </h1>
+  
+
+      </header>
+    
+    <div class="e-content article-entry" itemprop="articleBody">
+      
+        <head>
+<style>
+.column {
+  float: left;
+  width: 49%;
+  height: 380px;
+  padding: 2px;
+}
+
+<p>&#x2F;* Clear floats after image containers *&#x2F;<br>.row::after {<br>  content: “”;<br>  clear: both;<br>  display: table;<br>}<br></style></p>
+</head>
+
+<h4 id="clang-是一个非常工程化实现的编译器前端"><a href="#clang-是一个非常工程化实现的编译器前端" class="headerlink" title="clang 是一个非常工程化实现的编译器前端"></a>clang 是一个非常工程化实现的编译器前端</h4><ul>
+<li><p>和 llvm 一样采用基于库的设计，前端当中词法解析，语法解析，语义分析分离在自己对应的目录，非常便于扩展实现其他功能。</p>
+</li>
+<li><p>比如在 lsp 协议出来之后，clang 马上就实现了 clangd，ccls 等 language server，而隔壁的 gcc 由于代码量庞大且各个阶段耦合比较严重，并没能够提供好的解决方案。</p>
+</li>
+<li><p>但是工程化代码带来的另一个问题就是他的逻辑碎片的很严重，因为你作为一个初入 llvm 的人，不知道从哪里入手，这就是本篇文章的目的，代你粗略认识一下 clang。</p>
+</li>
+</ul>
+<ul>
+<li><a href="#Driver%E9%A9%B1%E5%8A%A8%E7%BC%96%E8%AF%91%E5%99%A8%E5%90%AF%E5%8A%A8">Driver驱动编译器</a></li>
+<li><a href="#%E4%BB%8Eparse%E5%BC%80%E5%A7%8B">从 parse 开始</a></li>
+<li><a href="#%E8%AF%AD%E4%B9%89%E5%88%86%E6%9E%90">语义分析</a></li>
+<li><a href="#%E4%B8%AD%E9%97%B4%E4%BB%A3%E7%A0%81%E7%94%9F%E6%88%90">中间代码生成</a></li>
+<li><a href="#clang-tool-extra">clang-tool-extra</a></li>
+</ul>
+<span id="more"></span>
+
+<h2 id="Driver驱动编译器启动"><a href="#Driver驱动编译器启动" class="headerlink" title="Driver驱动编译器启动"></a>Driver驱动编译器启动</h2><ul>
+<li><p>FrontendAction基础类提供了前端的基类，编译出.o文件使用的是EmitObjectAction，静态分析程序源码调用的是？Action。</p>
+<ul>
+<li>FrontendAction接受一个Consumer，Consumer必须要实现HandleTopLevelTranslation(), FrontendAction在完成parse的过程后，将翻译单元的根节点传给Consumer，<br>  Consumer决定将怎么使用整个翻译单元的结果。，</li>
+<li>clang的driver根据用户输入参数决定调用特定的FrontendAction满足用户需求。</li>
+<li>Driver（parser command line option, choose FrontendAction) </li>
+<li>FrontendAction (use parser, call Consumer’s consume function)</li>
+<li>Consumer (implments HandleTopLevelTranslation(), maybe call LLvm’s optimization phase, emitobject …)</li>
+</ul>
+</li>
+<li><p>还记得第一次学编译原理的时候，老师就从 parse 开始，但我们知道从流程来说第一个运行的组建是 lex，但为什么从 paser 开始讲起呢？parse 作为整个状态机的推动者，了解完 parse 做的工作，反过头来lex就可以自学了(lex的东西本来就很简单，说到底就是一个map&lt;string,TOKEN_ENUM&gt;)。parse的过程就确定lex必须要实现 lookahead 方法。paser最多向前看多少个字符(n)说明这个parser是ll(n)的。</p>
+</li>
+</ul>
+<h2 id="从parse开始"><a href="#从parse开始" class="headerlink" title="从parse开始"></a>从parse开始</h2><ul>
+<li><a target="_blank" rel="noopener" href="https://leetcode.com/problems/valid-number/">Leetcode的65题</a>，我用rust实现了一个parser, 以下是全文注释</li>
+</ul>
+<figure class="highlight rust"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br><span class="line">150</span><br><span class="line">151</span><br><span class="line">152</span><br><span class="line">153</span><br><span class="line">154</span><br><span class="line">155</span><br><span class="line">156</span><br><span class="line">157</span><br><span class="line">158</span><br><span class="line">159</span><br><span class="line">160</span><br><span class="line">161</span><br><span class="line">162</span><br><span class="line">163</span><br><span class="line">164</span><br><span class="line">165</span><br><span class="line">166</span><br><span class="line">167</span><br><span class="line">168</span><br><span class="line">169</span><br><span class="line">170</span><br><span class="line">171</span><br><span class="line">172</span><br><span class="line">173</span><br><span class="line">174</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// <span class="doctag">NOTE:</span> 整个程序的思路就是采用parser，向前消耗token，</span></span><br><span class="line"><span class="comment">// 消耗完输入的slice，则输入的字符串就是一个number，否则就不是</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// <span class="doctag">NOTE:</span>写成一个parser的原因是你不能相信用户的输入，也不能做任何的假设，</span></span><br><span class="line"><span class="comment">// 因为用户可能输入任何的字符串。程序都需要正确的处理。</span></span><br><span class="line"></span><br><span class="line"><span class="comment">// parser当中所有的方法都接受一个slice，返回一个slice，</span></span><br><span class="line"><span class="comment">// 如果输入的slice可以被当前的函数处理，那么返回slice剩下的未被处理的部分</span></span><br><span class="line"><span class="comment">// 否则返回None</span></span><br><span class="line"><span class="keyword">struct</span> <span class="title class_">Parser</span>;</span><br><span class="line"></span><br><span class="line"><span class="keyword">impl</span> <span class="title class_">Parser</span> &#123;</span><br><span class="line">    <span class="comment">// 输入的数字可能是一个&quot;number&quot;, 我们来parse它</span></span><br><span class="line">    <span class="keyword">fn</span> <span class="title function_">parse_number</span>(s: &amp;[<span class="type">char</span>]) <span class="punctuation">-&gt;</span> <span class="type">Option</span>&lt;&amp;[<span class="type">char</span>]&gt; &#123;</span><br><span class="line">        <span class="comment">// 输入的数字可能是一个&quot;digitil&quot;</span></span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">let</span> <span class="variable">Some</span>(v) = <span class="keyword">Self</span>::<span class="title function_ invoke__">parse_digitail</span>(s) &#123;</span><br><span class="line">            <span class="keyword">if</span> <span class="keyword">let</span> <span class="variable">Some</span>(v) = <span class="keyword">Self</span>::<span class="title function_ invoke__">consume_scitinic</span>(v) &#123;</span><br><span class="line">                <span class="keyword">if</span> <span class="keyword">let</span> <span class="variable">Some</span>(v) = <span class="keyword">Self</span>::<span class="title function_ invoke__">parse_integer</span>(v) &#123;</span><br><span class="line">                    <span class="keyword">return</span> <span class="title function_ invoke__">Some</span>(v);</span><br><span class="line">                &#125;</span><br><span class="line">                <span class="keyword">return</span> <span class="literal">None</span>;</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="keyword">return</span> <span class="title function_ invoke__">Some</span>(v);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 输入的数字可能是integer的形式</span></span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">let</span> <span class="variable">Some</span>(v) = <span class="keyword">Self</span>::<span class="title function_ invoke__">parse_integer</span>(s) &#123;</span><br><span class="line">            <span class="keyword">if</span> <span class="keyword">let</span> <span class="variable">Some</span>(v) = <span class="keyword">Self</span>::<span class="title function_ invoke__">consume_scitinic</span>(v) &#123;</span><br><span class="line">                <span class="keyword">if</span> <span class="keyword">let</span> <span class="variable">Some</span>(v) = <span class="keyword">Self</span>::<span class="title function_ invoke__">parse_integer</span>(v) &#123;</span><br><span class="line">                    <span class="keyword">return</span> <span class="title function_ invoke__">Some</span>(v);</span><br><span class="line">                &#125;</span><br><span class="line">                <span class="keyword">return</span> <span class="literal">None</span>;</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">None</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 输入的字符串即不是integer的形式也不是digitil的形式，那么我们不认识它了</span></span><br><span class="line">        <span class="literal">None</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 消耗掉可能的 科学计数法 符号</span></span><br><span class="line">    <span class="keyword">fn</span> <span class="title function_">consume_scitinic</span>(s: &amp;[<span class="type">char</span>]) <span class="punctuation">-&gt;</span> <span class="type">Option</span>&lt;&amp;[<span class="type">char</span>]&gt; &#123;</span><br><span class="line">        <span class="keyword">if</span> s.<span class="title function_ invoke__">is_empty</span>() &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">None</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> [<span class="string">&#x27;e&#x27;</span>, <span class="string">&#x27;E&#x27;</span>].<span class="title function_ invoke__">contains</span>(&amp;s[<span class="number">0</span>]) &#123;</span><br><span class="line">            <span class="comment">// 如果是以 &#x27;e&#x27;/&#x27;E&#x27; 开头，消耗掉它，并返回后面的</span></span><br><span class="line">            <span class="keyword">return</span> <span class="title function_ invoke__">Some</span>(&amp;s[<span class="number">1</span>..]);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 否则就不消耗，并返回None</span></span><br><span class="line">        <span class="literal">None</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 消耗掉可能的 &quot;.&quot; 号</span></span><br><span class="line">    <span class="keyword">fn</span> <span class="title function_">consume_dot</span>(s: &amp;[<span class="type">char</span>]) <span class="punctuation">-&gt;</span> <span class="type">Option</span>&lt;&amp;[<span class="type">char</span>]&gt; &#123;</span><br><span class="line">        <span class="keyword">if</span> s.<span class="title function_ invoke__">is_empty</span>() &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">None</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> s[<span class="number">0</span>] == <span class="string">&#x27;.&#x27;</span> &#123;</span><br><span class="line">            <span class="comment">// 如果是以 &#x27;.&#x27; 开头，消耗掉它，并返回后面的</span></span><br><span class="line">            <span class="keyword">return</span> <span class="title function_ invoke__">Some</span>(&amp;s[<span class="number">1</span>..]);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 否则就不消耗，并返回None</span></span><br><span class="line">        <span class="literal">None</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 消耗掉可能的 &quot;+&quot;/&quot;-&quot; 号</span></span><br><span class="line">    <span class="keyword">fn</span> <span class="title function_">consume_plus_or_minus</span>(s: &amp;[<span class="type">char</span>]) <span class="punctuation">-&gt;</span> <span class="type">Option</span>&lt;&amp;[<span class="type">char</span>]&gt; &#123;</span><br><span class="line">        <span class="keyword">if</span> s.<span class="title function_ invoke__">is_empty</span>() &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">None</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> [<span class="string">&#x27;+&#x27;</span>, <span class="string">&#x27;-&#x27;</span>].<span class="title function_ invoke__">contains</span>(&amp;s[<span class="number">0</span>]) &#123;</span><br><span class="line">            <span class="comment">// 如果是以 &#x27;+&#x27;/&#x27;-&#x27; 开头，消耗掉它，并返回后面的</span></span><br><span class="line">            <span class="title function_ invoke__">Some</span>(&amp;s[<span class="number">1</span>..])</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            <span class="comment">// 否则就不消耗，并返回None</span></span><br><span class="line">            <span class="literal">None</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 消耗掉 连续的数字</span></span><br><span class="line">    <span class="keyword">fn</span> <span class="title function_">consume_all_digits</span>(s: &amp;[<span class="type">char</span>]) <span class="punctuation">-&gt;</span> <span class="type">Option</span>&lt;&amp;[<span class="type">char</span>]&gt; &#123;</span><br><span class="line">        <span class="keyword">let</span> <span class="variable">len</span> = s.<span class="title function_ invoke__">len</span>();</span><br><span class="line">        <span class="keyword">let</span> <span class="keyword">mut </span><span class="variable">index</span> = <span class="number">0</span>;</span><br><span class="line">        <span class="keyword">while</span> index &lt; len &#123;</span><br><span class="line">            <span class="keyword">if</span> !s[index].<span class="title function_ invoke__">is_ascii_digit</span>() &#123;</span><br><span class="line">                <span class="keyword">break</span>;</span><br><span class="line">            &#125;</span><br><span class="line">            index += <span class="number">1</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> index == <span class="number">0</span> &#123;</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">None</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="title function_ invoke__">Some</span>(&amp;s[index..])</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 输入的数字可能是一个&quot;digitil&quot;, 我们来parse它</span></span><br><span class="line">    <span class="keyword">fn</span> <span class="title function_">parse_digitail</span>(s: &amp;[<span class="type">char</span>]) <span class="punctuation">-&gt;</span> <span class="type">Option</span>&lt;&amp;[<span class="type">char</span>]&gt; &#123;</span><br><span class="line">        <span class="keyword">let</span> <span class="variable">s</span> = <span class="keyword">match</span> <span class="keyword">Self</span>::<span class="title function_ invoke__">consume_plus_or_minus</span>(s) &#123;</span><br><span class="line">            <span class="title function_ invoke__">Some</span>(v) =&gt; v,</span><br><span class="line">            <span class="literal">None</span> =&gt; s,</span><br><span class="line">        &#125;;</span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">let</span> <span class="variable">Some</span>(s) = <span class="keyword">Self</span>::<span class="title function_ invoke__">consume_dot</span>(s) &#123;</span><br><span class="line">            <span class="keyword">if</span> <span class="keyword">let</span> <span class="variable">Some</span>(left) = <span class="keyword">Self</span>::<span class="title function_ invoke__">consume_all_digits</span>(s) &#123;</span><br><span class="line">                <span class="keyword">return</span> <span class="title function_ invoke__">Some</span>(left);</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="keyword">return</span> <span class="literal">None</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">let</span> <span class="variable">Some</span>(left) = <span class="keyword">Self</span>::<span class="title function_ invoke__">consume_all_digits</span>(s) &#123;</span><br><span class="line">            <span class="keyword">if</span> <span class="keyword">let</span> <span class="variable">Some</span>(left) = <span class="keyword">Self</span>::<span class="title function_ invoke__">consume_dot</span>(left) &#123;</span><br><span class="line">                <span class="keyword">if</span> <span class="keyword">let</span> <span class="variable">Some</span>(left) = <span class="keyword">Self</span>::<span class="title function_ invoke__">consume_all_digits</span>(left) &#123;</span><br><span class="line">                    <span class="keyword">return</span> <span class="title function_ invoke__">Some</span>(left);</span><br><span class="line">                &#125;</span><br><span class="line">                <span class="keyword">return</span> <span class="title function_ invoke__">Some</span>(left);</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="keyword">return</span> <span class="title function_ invoke__">Some</span>(left);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="literal">None</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 输入的数字可能是一个&quot;integer&quot;, 我们来parse它</span></span><br><span class="line">    <span class="keyword">fn</span> <span class="title function_">parse_integer</span>(s: &amp;[<span class="type">char</span>]) <span class="punctuation">-&gt;</span> <span class="type">Option</span>&lt;&amp;[<span class="type">char</span>]&gt; &#123;</span><br><span class="line">        <span class="comment">// integer可能以 &#x27;+&#x27;/&#x27;-&#x27;开头，我们先消耗掉这个符号</span></span><br><span class="line">        <span class="keyword">let</span> <span class="variable">s</span> = <span class="keyword">match</span> <span class="keyword">Self</span>::<span class="title function_ invoke__">consume_plus_or_minus</span>(s) &#123;</span><br><span class="line">            <span class="title function_ invoke__">Some</span>(v) =&gt; v,</span><br><span class="line">            <span class="literal">None</span> =&gt; s, <span class="comment">// 没有&#x27;+&#x27;/&#x27;-&#x27;开头也可以</span></span><br><span class="line">        &#125;;</span><br><span class="line">        </span><br><span class="line">        <span class="comment">// 接着消耗掉一串连续的数字</span></span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">let</span> <span class="variable">Some</span>(s) = <span class="keyword">Self</span>::<span class="title function_ invoke__">consume_all_digits</span>(s) &#123;</span><br><span class="line">            <span class="comment">// 能消耗成功，则返回消耗掉的字符串</span></span><br><span class="line">            <span class="title function_ invoke__">Some</span>(s)</span><br><span class="line">        &#125;<span class="keyword">else</span> &#123;</span><br><span class="line">            <span class="comment">// 不能消耗，那么返回None</span></span><br><span class="line">            <span class="literal">None</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">struct</span> <span class="title class_">Solution</span>;</span><br><span class="line"></span><br><span class="line"><span class="keyword">impl</span> <span class="title class_">Solution</span> &#123;</span><br><span class="line">    <span class="keyword">pub</span> <span class="keyword">fn</span> <span class="title function_">is_number</span>(s: &amp;<span class="type">str</span>) <span class="punctuation">-&gt;</span> <span class="type">bool</span> &#123;</span><br><span class="line">        <span class="comment">// 1 &lt;= s.length &lt;= 20</span></span><br><span class="line">        <span class="comment">// s consists of only English letters (both uppercase and lowercase),</span></span><br><span class="line">        <span class="comment">// digits (0-9), plus &#x27;+&#x27;, minus &#x27;-&#x27;, or dot &#x27;.&#x27;.</span></span><br><span class="line">        <span class="keyword">match</span> Parser::<span class="title function_ invoke__">parse_number</span>(&amp;s.<span class="title function_ invoke__">chars</span>().collect::&lt;<span class="type">Vec</span>&lt;<span class="type">char</span>&gt;&gt;()) &#123;</span><br><span class="line">            <span class="title function_ invoke__">Some</span>(v) =&gt; v.<span class="title function_ invoke__">is_empty</span>(), <span class="comment">// 如果当前字符串全被消耗则是一个number</span></span><br><span class="line">            <span class="literal">None</span> =&gt; <span class="literal">false</span>, <span class="comment">// 当前字符串不能被consume，则不是一个number</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="meta">#[cfg(test)]</span></span><br><span class="line"><span class="keyword">mod</span> test &#123;</span><br><span class="line">    <span class="keyword">use</span> super::*;</span><br><span class="line"></span><br><span class="line">    <span class="meta">#[test]</span></span><br><span class="line">    <span class="keyword">fn</span> <span class="title function_">case1_test</span>() &#123;</span><br><span class="line">        <span class="keyword">let</span> <span class="variable">s</span> = [ <span class="string">&quot;0&quot;</span>, <span class="string">&quot;e&quot;</span>, <span class="string">&quot;2&quot;</span>, <span class="string">&quot;0089&quot;</span>, <span class="string">&quot;-0.1&quot;</span>, <span class="string">&quot;+3.14&quot;</span>, <span class="string">&quot;4.&quot;</span>, <span class="string">&quot;-.9&quot;</span>,</span><br><span class="line">                  <span class="string">&quot;2e10&quot;</span>, <span class="string">&quot;-90E3&quot;</span>, <span class="string">&quot;3e+7&quot;</span>, <span class="string">&quot;+6e-1&quot;</span>, <span class="string">&quot;53.5e93&quot;</span>, <span class="string">&quot;-123.456e789&quot;</span>, ];</span><br><span class="line">        <span class="keyword">for</span> <span class="variable">i</span> <span class="keyword">in</span> s &#123;</span><br><span class="line">            <span class="keyword">let</span> <span class="variable">ret</span> = Solution::<span class="title function_ invoke__">is_number</span>(i);</span><br><span class="line">            <span class="built_in">assert!</span>(ret, <span class="string">&quot;&#123;&#125;&quot;</span>, i);</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="meta">#[test]</span></span><br><span class="line">    <span class="keyword">fn</span> <span class="title function_">case2_test</span>() &#123;</span><br><span class="line">        <span class="keyword">let</span> <span class="variable">s</span> = [<span class="string">&quot;.&quot;</span>, <span class="string">&quot;abc&quot;</span>, <span class="string">&quot;1a&quot;</span>, <span class="string">&quot;1e&quot;</span>, <span class="string">&quot;e3&quot;</span>, <span class="string">&quot;99e2.5&quot;</span>, <span class="string">&quot;--6&quot;</span>, <span class="string">&quot;-+3&quot;</span>, <span class="string">&quot;95a54e53&quot;</span>];</span><br><span class="line">        <span class="keyword">for</span> <span class="variable">i</span> <span class="keyword">in</span> s &#123;</span><br><span class="line">            <span class="keyword">let</span> <span class="variable">ret</span> = Solution::<span class="title function_ invoke__">is_number</span>(i);</span><br><span class="line">            <span class="built_in">assert!</span>(!ret, <span class="string">&quot;&#123;&#125;&quot;</span>, i);</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h3 id="parser的核心技术"><a href="#parser的核心技术" class="headerlink" title="parser的核心技术"></a>parser的核心技术</h3><h4 id="语法制导"><a href="#语法制导" class="headerlink" title="语法制导"></a>语法制导</h4><ul>
+<li>parser的实现就是通过look_ahead来判断下一个可能的语法，调用对应的处理函数,<br>比如我的parser通过tokenizer的lookahead拿到了一个关键字’if’,那么这时候就应该调用parseif()。<br>parseif()根据语法应该实现为:<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="function">Node* <span class="title">parseif</span><span class="params">()</span></span>&#123;</span><br><span class="line">    <span class="comment">/*</span></span><br><span class="line"><span class="comment">     *  if ( expr ) &#123;</span></span><br><span class="line"><span class="comment">     *       statements...</span></span><br><span class="line"><span class="comment">     *  &#125;</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    token::<span class="built_in">consume_token</span>(TOKEN_IF); <span class="comment">// 消耗掉当前的token if</span></span><br><span class="line">    token::<span class="built_in">consume_token</span>(<span class="string">&#x27;(&#x27;</span>);</span><br><span class="line">    <span class="keyword">auto</span> condition = <span class="built_in">parse_expr</span>();</span><br><span class="line">    token::<span class="built_in">consume_token</span>(<span class="string">&#x27;)&#x27;</span>);</span><br><span class="line">    token::<span class="built_in">consume_token</span>(<span class="string">&#x27;&#123;&#x27;</span>);</span><br><span class="line"></span><br><span class="line">    std::vector&lt;Statement&gt; statements;</span><br><span class="line">    <span class="keyword">while</span> (token::<span class="built_in">lookahead</span>() != <span class="string">&#x27;&#125;&#x27;</span>) <span class="comment">// NOTE：这里还需要判断这个&#x27;&#125;&#x27;所在的层级</span></span><br><span class="line">    &#123;</span><br><span class="line">        statements.<span class="built_in">push_back</span>(<span class="built_in">parse_statements</span>());</span><br><span class="line">    &#125;</span><br><span class="line">    token::<span class="built_in">consume_token</span>(<span class="string">&#x27;&#125;&#x27;</span>);</span><br><span class="line">    <span class="keyword">return</span> <span class="built_in">make_new</span>(</span><br><span class="line">        NodeIf&#123;</span><br><span class="line">            .condition = condition,</span><br><span class="line">            .statements = statements,</span><br><span class="line">        &#125;);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure></li>
+</ul>
+<h4 id="基于算符©️-优先级的表达式处理技术"><a href="#基于算符©️-优先级的表达式处理技术" class="headerlink" title="基于算符©️ 优先级的表达式处理技术"></a>基于算符©️ 优先级的表达式处理技术</h4><ul>
+<li><p>语法制导给了我们parse statements的能力，语法负责逻辑单元，不负责算术单元。算力都是通过表达式封装给用户的!</p>
+<ul>
+<li>c++11当中给我们封装了binary_expr和unary_expr，却没有thribal_expr（其实是有三木运算符这一说的，但不重要）。说明表达式也是二哥的孩子:  <p style="text-align: center;font-weight: bold;" >  任何一个复杂的表达式都可以拆分成多个二元表达式的组合 </p></li>
+<li>比如下面一条表达式</li>
+</ul>
+  <figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="number">1</span> + <span class="number">2</span> * <span class="number">3</span></span><br></pre></td></tr></table></figure>
+<ul>
+<li>为什么人脑能识别成左边这颗树而不是右边这颗树呢?</li>
+</ul>
+  <div class="row">
+      <div class="column">
+          <img hight=250px style="width:100%"src="./expr_with_precedence.png">
+      </div>
+      <div class="column">
+          <img hight=250px style="width:100%" src="./expr_without_precedence.png">
+      </div>
+  </div>
+
+
+<ul>
+<li>我们看一下ParseBinary的实现  <figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 接受一个左子树，并根据当前要求的最小优先级处理二元表达式</span></span><br><span class="line"><span class="function">Node* <span class="title">ParserBianry</span><span class="params">(Node* lhs, OperatorPrecedence min_precedence)</span></span>&#123;</span><br><span class="line">     <span class="keyword">while</span> (<span class="literal">true</span>) &#123;</span><br><span class="line">        <span class="keyword">auto</span> token = m_tokenizer.<span class="built_in">LookAHeadForOperator</span>();</span><br><span class="line">        <span class="keyword">if</span> (token == node_type::EOF) <span class="keyword">return</span> lhs;</span><br><span class="line"></span><br><span class="line">        <span class="type">int</span> precedence = <span class="built_in">GetTokenPrecendence</span>(token);</span><br><span class="line">        <span class="keyword">if</span> (precedence &lt; min_precedence) <span class="keyword">return</span> lhs;</span><br><span class="line"></span><br><span class="line">        m_tokenizer.<span class="built_in">next</span>();</span><br><span class="line">        <span class="keyword">auto</span> rhs = <span class="built_in">ParsePrimary</span>();</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (!rhs) &#123;</span><br><span class="line">            <span class="comment">// error</span></span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">auto</span> token = m_tokenizer.<span class="built_in">LookAHeadForOperator</span>();</span><br><span class="line"></span><br><span class="line">        <span class="keyword">if</span> (token == node_type::EOF) &#123;</span><br><span class="line">            m_tokenizer.<span class="built_in">Next</span>();</span><br><span class="line">            <span class="keyword">return</span> std::<span class="built_in">make_unique</span>&lt;BinaryNode&gt;(binaryop, std::<span class="built_in">move</span>(lhs),</span><br><span class="line">                                                std::<span class="built_in">move</span>(rhs));</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="keyword">auto</span> next_precedence = <span class="built_in">GetTokenPrecendence</span>(token);</span><br><span class="line">        <span class="keyword">if</span> (precedence &lt; next_precedence) &#123;</span><br><span class="line">            rhs = <span class="built_in">ParseBinary</span>(std::<span class="built_in">move</span>(rhs), precedence + <span class="number">1</span> );</span><br><span class="line">            <span class="keyword">if</span> (!rhs)&#123;</span><br><span class="line">                 <span class="comment">// error</span></span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">        lhs = std::<span class="built_in">make_unique</span>&lt;BinaryNode&gt;(binaryop, std::<span class="built_in">move</span>(lhs),</span><br><span class="line">                                           std::<span class="built_in">move</span>(rhs));</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure></li>
+<li>进入ParseBinary的时候token 的指针指向的是 ‘+’</li>
+<li>根据ParserBinary的代码可以看出来，其实现分为三个步骤</li>
+<li>向前parse一个算符，得到op1</li>
+<li>向前parse一个Parimary表达式，在这里就是数字2得到一个node v2</li>
+<li>再向前parse一个算符，得到op2</li>
+<li>根据op1和op2的优先级大小选择v2应该是和lhs组和成新的左子树，还是应该和下一个表达式结合成为右子树。</li>
+<li>整个parseBinary结束，优先级问题被二分树解析完成，自此，程序不需要担心表达式优先级。</li>
+<li>以上的代码片段来自于我实现的一个calculator解析程序<a target="_blank" rel="noopener" href="https://gist.github.com/ioperations/4f17864db199dfd19f21a7a19e41aa2c">此处为代码</a></li>
+</ul>
+</li>
+</ul>
+<h4 id="开源库当中关于算符优先级的问题"><a href="#开源库当中关于算符优先级的问题" class="headerlink" title="开源库当中关于算符优先级的问题"></a>开源库当中关于算符优先级的问题</h4><ul>
+<li>我修了一个关于<a target="_blank" rel="noopener" href="https://github.com/risingwavelabs/risingwave/issues/7641">risingwave当中算符优先级的问题</a></li>
+<li><a target="_blank" rel="noopener" href="https://gitee.com/opengauss/openGauss-server/issues/I6CQZ7">华为的opengauss和postgres兼容性bug</a></li>
+</ul>
+<h2 id="语义分析"><a href="#语义分析" class="headerlink" title="语义分析"></a>语义分析</h2><ul>
+<li>大体来说，当中的字符除了字面量就是变量，变量中各个的含义又不一样，比如说下面这个句子</li>
+</ul>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">Q: Are you kidding?</span><br><span class="line">A: No, I&#x27;m serious```</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>有些人就会理解成为你是凯蒂吗，不我是希尔瑞斯！，这个例子告诉你其实对于编译器来讲是错误的，因为产生了二义性，编译器解释不了之后，就会报错。但是下面这个例子编译器还是能够通过语义分析得出两者的不同，最后产生唯一的中间代码</li>
+</ul>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;iostream&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;limits&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;algorithm&gt;</span></span></span><br><span class="line"><span class="keyword">using</span> <span class="keyword">namespace</span> std;</span><br><span class="line"></span><br><span class="line"><span class="function"><span class="type">int</span> <span class="title">main</span><span class="params">(<span class="type">int</span> argc, <span class="type">char</span>* argv[])</span></span>&#123;</span><br><span class="line">    <span class="type">int</span> max = std::numeric_limits&lt;<span class="type">int</span>&gt;::<span class="built_in">min</span>();</span><br><span class="line">    <span class="type">int</span> ret = <span class="built_in">max</span>(max,<span class="number">0</span>);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<ul>
+<li>那么这段程序当中我就要问了，max 都是变量，但为什么一个是栈地址变量，一个是函数地址呢?语义分析这个大聪明到底是什么发现的呢?</li>
+</ul>
+<h2 id="中间代码生成"><a href="#中间代码生成" class="headerlink" title="中间代码生成"></a>中间代码生成</h2><ul>
+<li>在 clang 最后生成的代码是 llvm ir，作为 llvm 给我们提供了一个比较好的接口，就是 llvm ir 的 builder，llvm 封装了一个 builder 模式的类给我们，我们只需要在代码当中填写好我们的转换规则，就可以 low 到 llvm ir 层面了。整个前端的工作就算完成了</li>
+<li>之后 llvm 会进行 ir 层面的优化，下降到 machine independent 的表示，然后在进行一次优化，最后进行机器代码的生成 ,关于这一段过程，clang 还有一个接口，只需要注册 runOnFunction&#x2F; runOnBasicBlock，之后就可以分析 llmv ir 的中间过程处理情况</li>
+</ul>
+<h2 id="clang-tool-extra"><a href="#clang-tool-extra" class="headerlink" title="clang-tool-extra"></a>clang-tool-extra</h2><ul>
+<li>现代编译器至少要提供一个功能叫语义补全，那么这个功能在 clang 当中提供了什么接口呢，我们来看一下 clangd 中的一个实现</li>
+</ul>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">class</span> <span class="title class_">CompletionConsumer</span> : <span class="keyword">public</span> CodeCompleteConsumer &#123;</span><br><span class="line">    std::shared_ptr&lt;clang::GlobalCodeCompletionAllocator&gt; alloc;</span><br><span class="line">    CodeCompletionTUInfo cctu_info;</span><br><span class="line"></span><br><span class="line">   <span class="keyword">public</span>:</span><br><span class="line">    <span class="type">bool</span> from_cache;</span><br><span class="line">    std::vector&lt;CompletionItem&gt; ls_items;</span><br><span class="line"></span><br><span class="line">    <span class="built_in">CompletionConsumer</span>(<span class="type">const</span> CodeCompleteOptions&amp; opts, <span class="type">bool</span> from_cache)</span><br><span class="line">        :</span><br><span class="line">          <span class="built_in">CodeCompleteConsumer</span>(opts),</span><br><span class="line">          <span class="built_in">alloc</span>(std::<span class="built_in">make_shared</span>&lt;clang::GlobalCodeCompletionAllocator&gt;()),</span><br><span class="line">          <span class="built_in">cctu_info</span>(alloc),</span><br><span class="line">          <span class="built_in">from_cache</span>(from_cache) &#123;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="type">void</span> <span class="title">ProcessCodeCompleteResults</span><span class="params">(Sema&amp; s, CodeCompletionContext context,</span></span></span><br><span class="line"><span class="params"><span class="function">                                    CodeCompletionResult* results,</span></span></span><br><span class="line"><span class="params"><span class="function">                                    <span class="type">unsigned</span> numResults)</span> <span class="keyword">override</span> </span>&#123;</span><br><span class="line">        <span class="comment">// ...</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function">CodeCompletionAllocator&amp; <span class="title">getAllocator</span><span class="params">()</span> <span class="keyword">override</span> </span>&#123; <span class="keyword">return</span> *alloc; &#125;</span><br><span class="line">    <span class="function">CodeCompletionTUInfo&amp; <span class="title">getCodeCompletionTUInfo</span><span class="params">()</span> <span class="keyword">override</span> </span>&#123;</span><br><span class="line">        <span class="keyword">return</span> cctu_info;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+<ul>
+<li><p>也就是说，clang 给你提供了 codecomplete 的接口，你只需要实现 ProcessCodeCompleteResults 这个接口，把 clang 中的内容消费出来，然后包装给客户端。 clang-tool-extra 发展了clang的 ast 工具，基于 clang ast&#x2F;三地址码 可以完成更多非编译器的功能,（如基于lsp协议的语义补全，代码跳转，静态检查)。</p>
+</li>
+<li><ol start="0">
+<li>编译过程设计多个阶段，比如 c 语言的编译涉及到预编译，编译，汇编，链接，gcc 作为一个总调度器，管理着 cpp，cc1，as，ld 四个工具的使用。</li>
+</ol>
+</li>
+<li><ol>
+<li>复杂东西都是从简单的东西开始的，比如指令集这种庞大的东西，x86_64 上大概有 1000 多条指令，你要把这 1000 多条指令学习完成之后，再来完成你的事情，你的事情早就被别人做完了，你的价值也就无从体现。总结一下这 1000 多条指令，其中基础的算术指令 add&#x2F;sub，逻辑指令 and&#x2F;or&#x2F;，控制指令 mov&#x2F;lea&#x2F;jmp 也就 80 多条。其余的都是一些 simd 指令，这些 simd 指令有些是为了多媒体解析加速，有些是纯硬件实现的加密算法。编译器的must analysis分析出来一定等价之后才会替换基础指令到高速指令当中。</li>
+</ol>
+</li>
+<li><ol start="2">
+<li>种一颗树最好的时间是十年前，其次是现在。LLVM经过10年的打磨，从0.1到3.4 才追赶上了gcc，3.5 开始到现在已经飙了7年版本了。</li>
+</ol>
+</li>
+<li><ol start="3">
+<li>了解一下编译器对于你之后的编程之路帮助也有很多，比如 parse 这个东西，在很多场景当中都会遇到，比如 sql 注入的处理(当然涉及到正则表达式了, 正则表达式还是parser的选择又是一个问题)。</li>
+</ol>
+</li>
+</ul>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="http://example.com/2022/07/31/parser/" data-id="clg8360cm00006lej1qkyhdmi" data-title="clang parser" class="article-share-link">Share</a>
+      
+      
+      
+  <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/clang-llvm/" rel="tag">clang llvm</a></li></ul>
+
+    </footer>
+  </div>
+  
+    
+<nav id="article-nav">
+  
+    <a href="/2022/07/31/clang%E6%BA%90%E7%A0%81/" id="article-nav-newer" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Newer</strong>
+      <div class="article-nav-title">
+        
+          clang源码
+        
+      </div>
+    </a>
+  
+  
+</nav>
+
+  
+</article>
+
+
+</section>
+        
+          <aside id="sidebar">
+  
+    
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tags</h3>
+    <div class="widget">
+      <ul class="tag-list" itemprop="keywords"><li class="tag-list-item"><a class="tag-list-link" href="/tags/clang-llvm/" rel="tag">clang llvm</a></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tag Cloud</h3>
+    <div class="widget tagcloud">
+      <a href="/tags/clang-llvm/" style="font-size: 10px;">clang llvm</a>
+    </div>
+  </div>
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Archives</h3>
+    <div class="widget">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2022/07/">July 2022</a></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Recent Posts</h3>
+    <div class="widget">
+      <ul>
+        
+          <li>
+            <a href="/2022/07/31/clang%E6%BA%90%E7%A0%81/">clang源码</a>
+          </li>
+        
+          <li>
+            <a href="/2022/07/31/parser/">clang parser</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+
+  
+</aside>
+        
+      </div>
+      <footer id="footer">
+  
+  <div class="outer">
+    <div id="footer-info" class="inner">
+      
+      &copy; 2023 aodong.qin<br>
+      Powered by <a href="https://hexo.io/" target="_blank">Hexo</a>
+    </div>
+  </div>
+</footer>
+
+    </div>
+    <nav id="mobile-nav">
+  
+    <a href="/" class="mobile-nav-link">Home</a>
+  
+    <a href="/archives" class="mobile-nav-link">Archives</a>
+  
+</nav>
+    
+
+
+<script src="/js/jquery-3.4.1.min.js"></script>
+
+
+
+  
+<script src="/fancybox/jquery.fancybox.min.js"></script>
+
+
+
+
+<script src="/js/script.js"></script>
+
+
+
+
+
+  </div>
+</body>
+</html>
